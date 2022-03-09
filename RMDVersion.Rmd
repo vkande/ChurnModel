@@ -1,38 +1,30 @@
 ---
-title: "Untitled"
-output: github_document
+title: "My Own Project - Bank Customer Churn Analysis"
+output: pdf_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+#Executive summary
+
+This document is an data-science analysis of customer churn by using a bank data-set. I will use different simple machine learning model to predict if a customer is more likely to churn or not. Most of the method and approach are based on the knowledge acquired during the online course.
+
+I will use accuracy of confusion matrix to evaluate/compare the models.
+
 
 
 ## Library 
 
 ```{r}
-library(tidymodels) # Predictive Framework
-library(caret) # Predictive modele package
-install.packages("glmnet")
-install.packages("corrplot")
-install.packages("caTools")
+
+library(tidyverse)
+library(caret)
+library(data.table)
 library(caTools)
-library(rpart)
-library(rpart.plot)
+library(rpart)# Decision tree modeling
+library(rpart.plot) # Decision tree ploting
+library(randomForest)
 
-# Modelling AlgorithmsS
-library(glmnet) # Glmnet regression
-library(ranger) # Random Forests
-
-# Formating, Visualisations and tables
-library(scales) # Number formats
+# Formating, Visualizations and tables
 library(knitr) # Table
-library(gridExtra) # multiplot
-library(e1071) # Summary distribution
-library(skimr) # Summarise dataframe
-library(corrplot) # Correlation plot
-install.packages("probably")
-library(probably) # Probability thresholds
 
 # Data handling Packages
 library(tidyverse) # Data handling/ Graphics
@@ -40,15 +32,8 @@ library(data.table) # Data handling
 
 ```
 
-## GitHub Documents
 
-This is an R Markdown format used for publishing markdown documents to GitHub. When you click the **Knit** button all R code chunks are run and a markdown file (.md) suitable for publishing to GitHub is generated.
-
-## Including Code
-
-
-
-## Data loadding
+## Data loading
 
 ```{r}
 set.seed(1987)
@@ -58,7 +43,7 @@ df_raw <- data.table::fread("Churn_Modelling.csv")
 ## Data exploration
 
 ```{r}
-## To get data strucure
+## To get data structure
 str(df_raw)
 ```
 
@@ -69,6 +54,10 @@ You can include R code in the document as follows:
 ## To get an understanding of data
 summary(df_raw)
 ```
+The churn status is in the column "Exited"
+ 0 = Not Churn
+ 1 = Churn
+ 
 
 ```{r}
 ## Check if there is NA value in "Exited" column
@@ -80,8 +69,8 @@ df_raw%>%filter(is.na(Exited))%>%summarise(n())
 
 ```{r}
 df_raw%>%ggplot(aes(Exited))+
-  geom_histogram(binwidth = 1, fill = c("Blue"), col="black")+
-  labs(title = "Globak Churn Overview" , x= "Churn Status : 0=No, 1=Yes", y= "Count")
+  geom_histogram(binwidth = 1, fill = c("Blue", "Black"), col="black")+
+  labs(title = "Globak Churn Overview" , x= "Churn Status", y= "Count")
 ```
 
 ## Explore correlation between churn and other variables
@@ -125,7 +114,7 @@ There also a slight effect of genre. Women churn more than men.
 df_raw %>%filter(Exited==1)%>%
 group_by(Age) %>%
 ggplot(aes(x = Age)) +
-geom_histogram() +
+geom_histogram(color="green", binwidth = 3) +
 labs(y = NULL, x = NULL) +
 theme(plot.title = element_text(hjust = 0.5),
 legend.position = "bottom") +
@@ -134,23 +123,36 @@ ggtitle("Chrun Age")
 ```
 This plot show a normal distribution of the churn age with the average between 38 and 55.
 
-So there definitively an effect of age.
+So there is definitively an effect of age.
 
-### Churn by Tenue
-
+### Churn by Tenure
 
 
 ```{r}
 df_raw %>%filter(Exited==1)%>%
 group_by(Tenure) %>%
 ggplot(aes(x = Tenure)) +
-geom_histogram() +
+geom_histogram(color="green", binwidth = 1) +
 labs(y = NULL, x = NULL) +
 theme(plot.title = element_text(hjust = 0.5),
 legend.position = "bottom") +
 ggtitle("Chrun Age")
 
 ```
+
+#### What is the average tenure for exited customer
+
+```{r}
+#Average tenure before churned
+
+avg_tenure<-df_raw %>%filter(Exited==1)%>%summarise(mean(Tenure))
+
+round(avg_tenure)
+
+```
+
+The average is around 5 year. Mean the company shoud pay attention when a tenure year is near to 5.
+
 
 
 
@@ -165,80 +167,99 @@ head(df)
 
 ```{r}
 #Create data partition into a training and testing dataset
-
-index<-createDataPartition(y=df$Exited, p=.75, list = FALSE) #Generation partition indexes
+set.seed(1987)
+index<-createDataPartition(y=df$Exited, p=.75, list = FALSE)# partition indexes
 train<-df[index] # Create training partition
 test<-df[-index] # Create testing partition
 head(train)
 ```
 
+```{r}
+#Table to collect the models performance
+table <- tibble(Model="Begin", Acc=0.0)
+```
 
 ### Model 1: Logistic regression
 
+
+
 ```{r}
-model1<-glm(train$Exited ~ . , family = "binomial", train) # Modeling logistic regression
-summary(model1) # Model summary data
+set.seed(1987)
+# Modeling logistic regression
+model1<-glm(train$Exited ~ . , family = "binomial", train) 
+# Model summary data
+summary(model1) 
 
 ```
 
 ```{r}
 # Now we will predict
-
-pred1<-predict(model1, test, type="response") # Make the prediction on testing data
+# Make the prediction on testing data
+pred1<-predict(model1, test, type="response")
 ```
 
 ```{r}
-#Generate the ROC curve the determine the cutt-off
+#Generate the ROC curve the determine the cut-off
 
 model.AUC<-colAUC(pred1, test$Exited, plotROC=T)
 abline(h = model.AUC, col="red")
 text(.2, .9, cex=.8, labels=paste("Original Cutoff:", round(model.AUC,4)))
 ```
-The cutoff value is : 0.7746
+The cutoff value is : 0.7676
 
 
 ```{r}
-# Now we can use conditional expression
-classification<-ifelse(pred1>0.7746, 1, 0)
+# Now we can use conditional expression to make the prediction
+classification<-ifelse(pred1>0.7676, 1, 0)
 classification<-factor(classification)
-str(classification)
-str(test$Exited)
-sum(t)
 
 ```
 
 
 ```{r}
-#Confusion Matrix
-confusionMatrix(classification, factor(test$Exited))
+#Confusion Matrix to determine the Accuracy
+confusionMatrix(classification, 
+                factor(test$Exited))$overall["Accuracy"]
+
+result1<-confusionMatrix(classification, 
+                         factor(test$Exited))$overall["Accuracy"]
+
 
 ```
- We have got about 80% of Accuracy.
+ We have got about 80.56% of Accuracy.
  
+```{r}
+#Update the result table
+
+table <- bind_rows(table,
+                   tibble(Model = "Logistic regression",
+                          Acc = result1))
+kable(table)
+```
+
+
  
 ### Model 2: Decision Tree matrix
  
+
 ```{r}
-#Reformat the original data and then create again partition
-
-df<-df%>%mutate(churn=factor(Exited))
-
-#Create partition again
-part<-sample(2, nrow(df), replace = TRUE, prob=c(0.75,0.25))
-train<-df[part==1,]
-test<-df[part==2,]
-
+## For the following models, we will update the train and test data
+train<-train%>%mutate(Exited=factor(Exited))
+test<-test%>%mutate(Exited=factor(Exited))
 
 ```
- 
+
+
 
 ```{r}
 #Build decision tree model
+set.seed(1987)
 
-df_tree<-rpart(train$churn~train$CreditScore+train$Geography+train$Gender+train$Age+train$Tenure+train$Balance+train$NumOfProducts+train$HasCrCard+train$IsActiveMember+train$EstimatedSalary)
+df_tree<-rpart(train$Exited ~ ., data = train)
 
-# Check summary information
-summary(df_tree)
+# Check the variable importance
+df_tree$variable.importance
+
 ```
 
 ```{r}
@@ -252,19 +273,17 @@ rpart.plot(df_tree, extra=5)
 #Make a prediction using decision tree
 pred2<-predict(df_tree, train, type="class")
 
-#Check the levels
-levels(pred2)
-levels(train$churn)
 ```
 
 ```{r}
-confusionMatrix(pred2, train$churn)
+#Accuracy on train set
+confusionMatrix(pred2, train$Exited)$overall["Accuracy"]
 ```
 
 ```{r}
-#re-apply all decision tree step on Test data set
-
-df_tree<-rpart(test$churn~test$CreditScore+test$Geography+test$Gender+test$Age+test$Tenure+test$Balance+test$NumOfProducts+test$HasCrCard+test$IsActiveMember+test$EstimatedSalary)
+#re-apply all decision tree steps on test data set
+set.seed(1987)
+df_tree<-rpart(test$Exited ~ ., data = test)
 
 # Check summary information
 summary(df_tree)
@@ -275,51 +294,66 @@ rpart.plot(df_tree, extra=5)
 #Make a prediction using decision tree
 pred2<-predict(df_tree, test, type="class")
 
-#Check the levels
-levels(pred2)
-levels(test$churn)
 
-confusionMatrix(pred2, test$churn)
+result2<-confusionMatrix(pred2, test$Exited)$overall["Accuracy"]
+
+
+#Insert in the resut table
+table <- bind_rows(table,
+                   tibble(Model = "Decision Tree",
+                          Acc = result2))
+kable(table)
 ```
 
 
-Decision tree give a better prediction with more than 86% accuracy. That is correct estimation.
+Decision tree give a better prediction with  86,24% accuracy. That is correct estimation.
 
 
-### Model 3: KNN model
+### Model 3: Random forest
+
 
 
 ```{r}
-#Create data partition into a training and testing dataset
+set.seed(1987)
+control <- trainControl(method="cv", number = 5)
+grid <- data.frame(mtry = c(1, 5, 10, 25, 50, 100))
 
-index<-createDataPartition(y=df$Exited, p=.75, list = FALSE) #Generation partition indexes
-train<-df[index] # Create training partition
-test<-df[-index] # Create testing partition
-head(train)
+pred3<- train(Exited ~ ., method = "rf", 
+                   data = train,
+                   tuneGrid = grid,
+      ntree = 150,
+                   trControl = control,
+                 )
+
+result3<-confusionMatrix(predict(pred3,test , type = "raw"),
+                test$Exited)$overall["Accuracy"]
+
+table <- bind_rows(table,
+                   tibble(Model = "Random Forest",
+                          Acc = result3))
+
+kable(table)
+
 ```
+Accuracy of 85,52% for random forest model
 
+Doing great, but still under decision tree model
+
+
+
+
+## Conclusion - Model comparison
+
+The final table of accuracy is here :
 
 ```{r}
-trainbis<-train%>%select(-Exited)
-testbis<-test%>%select(-Exited)
-pred3 <- train(churn ~ ., method = "knn", 
-                   data = trainbis,
-                   tuneGrid = data.frame(k = seq(71, 200, 5)))
-
-pred3$bestTune
-
-
-confusionMatrix(predict(pred3,testbis , type = "raw"),
-                testbis$churn)$overall["Accuracy"]
+kable(table)
 
 ```
 
 
 
-
-
-
-
+By looking at this table, we can conclude that the best model for customer chrun prediction  is "Decision Tree"
 
 
 
