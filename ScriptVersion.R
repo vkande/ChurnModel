@@ -1,0 +1,363 @@
+#' ---
+#' title: "My Own Project - Bank Customer Churn Analysis"
+#' output: pdf_document
+#' ---
+#' 
+#' #Executive summary
+#' 
+#' This document is an data-science analysis of customer churn by using a bank data-set. I will use different simple machine learning model to predict if a customer is more likely to churn or not. Most of the method and approach are based on the knowledge acquired during the online course.
+#' 
+#' I will use accuracy of confusion matrix to evaluate/compare the models.
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+purl("RMVersion.Rmd", output = "ScripVersion.R", documentation = 2)
+
+#' 
+#' 
+#' ## Library 
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+
+library(tidyverse)
+library(caret)
+library(data.table)
+library(caTools)
+library(rpart)# Decision tree modeling
+library(rpart.plot) # Decision tree ploting
+library(randomForest)
+
+# Formating, Visualizations and tables
+library(knitr) # Table
+
+# Data handling Packages
+library(tidyverse) # Data handling/ Graphics
+library(data.table) # Data handling
+
+
+
+#' 
+#' 
+#' ## Data loading
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+set.seed(1987)
+df_raw <- data.table::fread("Churn_Modelling.csv")
+
+#' 
+#' ## Data exploration
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+## To get data structure
+str(df_raw)
+
+#' 
+#' 
+#' You can include R code in the document as follows:
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+## To get an understanding of data
+summary(df_raw)
+
+#' The churn status is in the column "Exited"
+#'  0 = Not Churn
+#'  1 = Churn
+#'  
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+## Check if there is NA value in "Exited" column
+df_raw%>%filter(is.na(Exited))%>%summarise(n())
+
+
+#' 
+#' ### Global Churn overview
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+df_raw%>%ggplot(aes(Exited))+
+  geom_histogram(binwidth = 1, fill = c("Blue", "Black"), col="black")+
+  labs(title = "Globak Churn Overview" , x= "Churn Status", y= "Count")
+
+#' 
+#' ## Explore correlation between churn and other variables
+#' 
+#' ## Churn by geography
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+df_raw %>%
+group_by(Geography, Exited) %>%count() %>%
+  ggplot(aes(x = Geography, y = n, fill = Exited)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(y = NULL, x = NULL) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom") +
+  ggtitle("Geography")
+
+
+#' There is more churn in "Germany"
+#' 
+#' 
+#' ## Churn by genre
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+df_raw %>%group_by(Gender, Exited) %>%count() %>%
+  ggplot(aes(x = Gender, y = n, fill = Exited)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(y = NULL, x = NULL) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom") +
+  ggtitle("Gender")
+            
+
+#' There also a slight effect of genre. Women churn more than men.
+#' 
+#' 
+#' ## Churn distribution by age
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+df_raw %>%filter(Exited==1)%>%
+group_by(Age) %>%
+ggplot(aes(x = Age)) +
+geom_histogram(color="green", binwidth = 3) +
+labs(y = NULL, x = NULL) +
+theme(plot.title = element_text(hjust = 0.5),
+legend.position = "bottom") +
+ggtitle("Chrun Age")
+            
+
+#' This plot show a normal distribution of the churn age with the average between 38 and 55.
+#' 
+#' So there is definitively an effect of age.
+#' 
+#' ### Churn by Tenure
+#' 
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+df_raw %>%filter(Exited==1)%>%
+group_by(Tenure) %>%
+ggplot(aes(x = Tenure)) +
+geom_histogram(color="green", binwidth = 1) +
+labs(y = NULL, x = NULL) +
+theme(plot.title = element_text(hjust = 0.5),
+legend.position = "bottom") +
+ggtitle("Chrun Age")
+
+
+#' 
+#' #### What is the average tenure for exited customer
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Average tenure before churned
+
+avg_tenure<-df_raw %>%filter(Exited==1)%>%summarise(mean(Tenure))
+
+round(avg_tenure)
+
+
+#' 
+#' The average is around 5 year. Mean the company shoud pay attention when a tenure year is near to 5.
+#' 
+#' 
+#' 
+#' 
+#' ## Data Modeling
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+## Keep only the variable needed for our models
+
+df<-df_raw%>%select(-c(Surname,RowNumber,CustomerId))
+head(df)
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Create data partition into a training and testing dataset
+set.seed(1987)
+index<-createDataPartition(y=df$Exited, p=.75, list = FALSE)# partition indexes
+train<-df[index] # Create training partition
+test<-df[-index] # Create testing partition
+head(train)
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Table to collect the models performance
+table <- tibble(Model="Begin", Acc=0.0)
+
+#' 
+#' ### Model 1: Logistic regression
+#' 
+#' 
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+set.seed(1987)
+# Modeling logistic regression
+model1<-glm(train$Exited ~ . , family = "binomial", train) 
+# Model summary data
+summary(model1) 
+
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+# Now we will predict
+# Make the prediction on testing data
+pred1<-predict(model1, test, type="response")
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Generate the ROC curve the determine the cut-off
+
+model.AUC<-colAUC(pred1, test$Exited, plotROC=T)
+abline(h = model.AUC, col="red")
+text(.2, .9, cex=.8, labels=paste("Original Cutoff:", round(model.AUC,4)))
+
+#' The cutoff value is : 0.7676
+#' 
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+# Now we can use conditional expression to make the prediction
+classification<-ifelse(pred1>0.7676, 1, 0)
+classification<-factor(classification)
+
+
+#' 
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Confusion Matrix to determine the Accuracy
+confusionMatrix(classification, 
+                factor(test$Exited))$overall["Accuracy"]
+
+result1<-confusionMatrix(classification, 
+                         factor(test$Exited))$overall["Accuracy"]
+
+
+
+#'  We have got about 80.56% of Accuracy.
+#'  
+## -------------------------------------------------------------------------------------------------------------------
+#Update the result table
+
+table <- bind_rows(table,
+                   tibble(Model = "Logistic regression",
+                          Acc = result1))
+kable(table)
+
+#' 
+#' 
+#'  
+#' ### Model 2: Decision Tree matrix
+#'  
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+## For the following models, we will update the train and test data
+train<-train%>%mutate(Exited=factor(Exited))
+test<-test%>%mutate(Exited=factor(Exited))
+
+
+#' 
+#' 
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Build decision tree model
+set.seed(1987)
+
+df_tree<-rpart(train$Exited ~ ., data = train)
+
+# Check the variable importance
+df_tree$variable.importance
+
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Plot the decision tree
+
+rpart.plot(df_tree, extra=5)
+
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Make a prediction using decision tree
+pred2<-predict(df_tree, train, type="class")
+
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#Accuracy on train set
+confusionMatrix(pred2, train$Exited)$overall["Accuracy"]
+
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+#re-apply all decision tree steps on test data set
+set.seed(1987)
+df_tree<-rpart(test$Exited ~ ., data = test)
+
+# Check summary information
+summary(df_tree)
+
+rpart.plot(df_tree, extra=5)
+
+
+#Make a prediction using decision tree
+pred2<-predict(df_tree, test, type="class")
+
+
+result2<-confusionMatrix(pred2, test$Exited)$overall["Accuracy"]
+
+
+#Insert in the resut table
+table <- bind_rows(table,
+                   tibble(Model = "Decision Tree",
+                          Acc = result2))
+kable(table)
+
+#' 
+#' 
+#' Decision tree give a better prediction with  86,24% accuracy. That is correct estimation.
+#' 
+#' 
+#' ### Model 3: Random forest
+#' 
+#' 
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+set.seed(1987)
+control <- trainControl(method="cv", number = 5)
+grid <- data.frame(mtry = c(1, 5, 10, 25, 50, 100))
+
+pred3<- train(Exited ~ ., method = "rf", 
+                   data = train,
+                   tuneGrid = grid,
+      ntree = 150,
+                   trControl = control,
+                 )
+
+result3<-confusionMatrix(predict(pred3,test , type = "raw"),
+                test$Exited)$overall["Accuracy"]
+
+table <- bind_rows(table,
+                   tibble(Model = "Random Forest",
+                          Acc = result3))
+
+kable(table)
+
+
+#' Accuracy of 85,52% for random forest model
+#' 
+#' Doing great, but still under decision tree model
+#' 
+#' 
+#' 
+#' 
+#' ## Conclusion - Model comparison
+#' 
+#' The final table of accuracy is here :
+#' 
+## -------------------------------------------------------------------------------------------------------------------
+kable(table)
+
+
+#' 
+#' 
+#' 
+#' By looking at this table, we can conclude that the best model for customer chrun prediction  is "Decision Tree"
+#' 
+#' 
+#' 
